@@ -1,2 +1,15 @@
 node_modules/
 test.js
+
+# Environment files (NEVER commit secrets!)
+.env
+.env.local
+.env.production
+backend/.env
+
+# Build artifacts
+build/
+dist/
+
+# Truffle
+.secret
