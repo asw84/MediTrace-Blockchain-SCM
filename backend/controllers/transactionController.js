@@ -23,13 +23,16 @@ exports.recordTransaction = async (req, res) => {
 
     let method;
     // Map the dropdown values from the frontend to contract methods
-    if (action === "shipped") { // We'll use 'shipped' as 'Distribute' for your UI
+    const normalizedAction = action.toLowerCase().trim();
+
+    if (normalizedAction === "shipped") {
       method = contract.methods.distributeMedicine(medicineId);
-    } else if (action === "in_transit") { // Let's use this as Manufacture
+    } else if (normalizedAction === "in transit" || normalizedAction === "in_transit") {
       method = contract.methods.manufactureMedicine(medicineId);
-    } else if (action === "received") { // Let's use this as Supply
+    } else if (normalizedAction === "received") {
       method = contract.methods.supplyRawMaterials(medicineId);
     } else {
+      console.error(`Invalid action: ${action}`);
       return res.status(400).json({ error: "Invalid action selected" });
     }
 
