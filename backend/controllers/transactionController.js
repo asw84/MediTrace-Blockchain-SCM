@@ -67,7 +67,7 @@ exports.recordTransaction = async (req, res) => {
   }
 };
 
-exports.getAllTransactions = async (req, res) => {
+exports.getTransactions = async (req, res) => {
   try {
     const transactions = await Transaction.find().sort({ timestamp: -1 });
     res.json(transactions);
