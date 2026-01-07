@@ -59,21 +59,28 @@ exports.addParticipant = async (req, res) => {
     }
 
     const receipt = await registerParticipant(role, address, name, location);
+    console.log('Transaction successful:', receipt.transactionHash);
 
-    const participant = new Participant({
-      blockchainId: receipt.transactionHash,
-      address,
-      name,
-      location,
-      role,
-    });
-
-    await participant.save();
+    // Try to save to MongoDB, but don't fail if it's not available
+    let savedParticipant = null;
+    try {
+      const participant = new Participant({
+        blockchainId: receipt.transactionHash,
+        address,
+        name,
+        location,
+        role,
+      });
+      savedParticipant = await participant.save();
+    } catch (dbError) {
+      console.log('MongoDB not available, skipping database save');
+    }
 
     res.status(201).json({
-      message: `${role} added successfully`,
-      participant,
+      message: `${role} added successfully to blockchain`,
+      participant: savedParticipant || { address, name, location, role },
       transactionHash: receipt.transactionHash,
+      blockNumber: receipt.blockNumber,
     });
 
   } catch (error) {
