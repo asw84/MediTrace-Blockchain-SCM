@@ -75,13 +75,14 @@ exports.updateShipmentStatusWithNote = async (req, res) => {
       });
     }
 
-    // Get sender account from environment or use first account
-    const accounts = await web3js.eth.getAccounts();
-    const senderAccount = process.env.SENDER_ACCOUNT || accounts[0];
+    // Get sender account from web3 wallet (configured with private key)
+    const senderAccount = web3js.eth.defaultAccount || process.env.OWNER_ADDRESS;
 
     if (!senderAccount) {
-      return res.status(500).json({ error: "No sender account configured" });
+      return res.status(500).json({ error: "No sender account configured. Check OWNER_PRIVATE_KEY or OWNER_ADDRESS env variables." });
     }
+
+    console.log('Sending transaction from:', senderAccount);
 
     // Call blockchain contract
     const tx = await contract.methods
