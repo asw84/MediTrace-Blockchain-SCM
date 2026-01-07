@@ -7,9 +7,19 @@ const { web3js, contract } = require("../config/web3");
 require("dotenv").config();
 
 const ownerAddress = process.env.OWNER_ADDRESS;
-const ownerPrivateKey = process.env.OWNER_PRIVATE_KEY;
+// Ensure private key has 0x prefix
+const ownerPrivateKey = process.env.OWNER_PRIVATE_KEY?.startsWith('0x')
+  ? process.env.OWNER_PRIVATE_KEY
+  : '0x' + process.env.OWNER_PRIVATE_KEY;
 
 const registerParticipant = async (role, address, name, location) => {
+  if (!ownerAddress || !ownerPrivateKey) {
+    throw new Error("OWNER_ADDRESS or OWNER_PRIVATE_KEY not configured");
+  }
+
+  console.log('Registering participant:', { role, address, name, location });
+  console.log('Using owner address:', ownerAddress);
+
   const nonce = await web3js.eth.getTransactionCount(ownerAddress);
   const gasPrice = await web3js.eth.getGasPrice();
 
@@ -35,7 +45,9 @@ const registerParticipant = async (role, address, name, location) => {
     data: method.encodeABI(),
   };
 
+  console.log('Signing transaction...');
   const signedTx = await web3js.eth.accounts.signTransaction(tx, ownerPrivateKey);
+  console.log('Sending transaction...');
   return await web3js.eth.sendSignedTransaction(signedTx.rawTransaction);
 };
 
