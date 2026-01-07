@@ -13,6 +13,12 @@ const ShipmentStatus = {
   Delivered: 2
 };
 
+const ownerAddress = process.env.OWNER_ADDRESS;
+// Ensure private key has 0x prefix
+const ownerPrivateKey = process.env.OWNER_PRIVATE_KEY?.startsWith('0x')
+  ? process.env.OWNER_PRIVATE_KEY
+  : '0x' + process.env.OWNER_PRIVATE_KEY;
+
 exports.createShipment = async (req, res) => {
   try {
     const { medicineId, sender, receiver, trackingId } = req.body;
@@ -21,21 +27,55 @@ exports.createShipment = async (req, res) => {
       return res.status(400).json({ error: "All fields are required" });
     }
 
-    const shipment = new Shipment({
-      medicineId,
-      sender,
-      receiver,
-      trackingId,
-      status: "Pending",
+    if (!ownerAddress || !ownerPrivateKey) {
+      return res.status(500).json({ error: "Owner credentials not configured" });
+    }
+
+    console.log('Creating shipment on blockchain for ID:', trackingId);
+
+    // Call blockchain contract
+    const nonce = await web3js.eth.getTransactionCount(ownerAddress);
+    const gasPrice = await web3js.eth.getGasPrice();
+    const method = contract.methods.createShipment(medicineId, receiver, trackingId);
+
+    const tx = {
+      from: ownerAddress,
+      to: contract.options.address,
+      gas: 500000,
+      gasPrice,
+      nonce,
+      data: method.encodeABI(),
+    };
+
+    const signedTx = await web3js.eth.accounts.signTransaction(tx, ownerPrivateKey);
+    const receipt = await web3js.eth.sendSignedTransaction(signedTx.rawTransaction);
+    console.log('Shipment created in blockchain. TxHash:', receipt.transactionHash);
+
+    // Try to save local database
+    let savedShipment = null;
+    try {
+      const shipment = new Shipment({
+        medicineId,
+        sender: ownerAddress, // Sender is the one who signs (distributor)
+        receiver,
+        trackingId,
+        status: "Pending",
+        blockchainHash: receipt.transactionHash
+      });
+      savedShipment = await shipment.save();
+    } catch (dbError) {
+      console.log('MongoDB error, shipment exists only on blockchain:', dbError.message);
+    }
+
+    res.status(201).json({
+      message: "Shipment created successfully on blockchain",
+      shipment: savedShipment || { medicineId, trackingId, status: "Pending" },
+      transactionHash: receipt.transactionHash
     });
-
-    await shipment.save();
-
-    res.status(201).json({ message: "Shipment created", shipment });
 
   } catch (error) {
     console.error("Error creating shipment:", error);
-    res.status(500).json({ error: "Error creating shipment" });
+    res.status(500).json({ error: "Error creating shipment", details: error.message });
   }
 };
 
@@ -60,49 +100,47 @@ exports.updateShipmentStatusWithNote = async (req, res) => {
   try {
     const { trackingId, status, note } = req.body;
 
-    // Validate required fields
     if (!trackingId || status === undefined || !note) {
       return res.status(400).json({
         error: "Missing required fields: trackingId, status, and note are required"
       });
     }
 
-    // Validate status value
     const statusNum = typeof status === 'string' ? ShipmentStatus[status] : status;
-    if (statusNum === undefined || statusNum < 0 || statusNum > 2) {
-      return res.status(400).json({
-        error: "Invalid status. Must be 'Pending' (0), 'InTransit' (1), or 'Delivered' (2)"
-      });
-    }
 
-    // Get sender account from web3 wallet (configured with private key)
-    const senderAccount = web3js.eth.defaultAccount || process.env.OWNER_ADDRESS;
+    console.log(`Updating shipment ${trackingId} to status ${statusNum} on blockchain...`);
 
-    if (!senderAccount) {
-      return res.status(500).json({ error: "No sender account configured. Check OWNER_PRIVATE_KEY or OWNER_ADDRESS env variables." });
-    }
+    const nonce = await web3js.eth.getTransactionCount(ownerAddress);
+    const gasPrice = await web3js.eth.getGasPrice();
+    const method = contract.methods.updateShipmentStatusWithNote(trackingId, statusNum, note);
 
-    console.log('Sending transaction from:', senderAccount);
+    const txParams = {
+      from: ownerAddress,
+      to: contract.options.address,
+      gas: 500000,
+      gasPrice,
+      nonce,
+      data: method.encodeABI(),
+    };
 
-    // Call blockchain contract
-    const tx = await contract.methods
-      .updateShipmentStatusWithNote(trackingId, statusNum, note)
-      .send({
-        from: senderAccount,
-        gas: 500000
-      });
+    const signedTx = await web3js.eth.accounts.signTransaction(txParams, ownerPrivateKey);
+    const receipt = await web3js.eth.sendSignedTransaction(signedTx.rawTransaction);
 
-    // Update local database as well
-    const shipment = await Shipment.findOne({ trackingId });
-    if (shipment) {
-      shipment.status = Object.keys(ShipmentStatus).find(key => ShipmentStatus[key] === statusNum);
-      await shipment.save();
+    // Update local database
+    try {
+      const shipment = await Shipment.findOne({ trackingId });
+      if (shipment) {
+        shipment.status = Object.keys(ShipmentStatus).find(key => ShipmentStatus[key] === statusNum);
+        await shipment.save();
+      }
+    } catch (dbError) {
+      console.log('MongoDB error during status update');
     }
 
     res.status(200).json({
       message: "Shipment status updated with note successfully",
-      transactionHash: tx.transactionHash,
-      blockNumber: tx.blockNumber,
+      transactionHash: receipt.transactionHash,
+      blockNumber: receipt.blockNumber?.toString(),
       trackingId,
       status: statusNum,
       note
@@ -110,26 +148,6 @@ exports.updateShipmentStatusWithNote = async (req, res) => {
 
   } catch (error) {
     console.error("Error updating shipment status with note:", error);
-
-    // Handle blockchain revert errors
-    if (error.message && error.message.includes("revert")) {
-      const revertReason = error.message.includes("Shipment not found")
-        ? "Shipment not found on blockchain"
-        : "Transaction reverted by contract";
-      return res.status(400).json({
-        error: revertReason,
-        details: error.message
-      });
-    }
-
-    // Handle other blockchain errors
-    if (error.code === "INVALID_ARGUMENT" || error.code === "CALL_EXCEPTION") {
-      return res.status(400).json({
-        error: "Invalid blockchain transaction parameters",
-        details: error.message
-      });
-    }
-
     res.status(500).json({
       error: "Error updating shipment status with note",
       details: error.message
@@ -167,14 +185,6 @@ exports.getShipmentNotes = async (req, res) => {
 
   } catch (error) {
     console.error("Error getting shipment notes:", error);
-
-    // Handle blockchain revert errors
-    if (error.message && error.message.includes("Shipment not found")) {
-      return res.status(404).json({
-        error: "Shipment not found on blockchain"
-      });
-    }
-
     res.status(500).json({
       error: "Error retrieving shipment notes",
       details: error.message
@@ -185,41 +195,9 @@ exports.getShipmentNotes = async (req, res) => {
 exports.getAllShipments = async (req, res) => {
   try {
     const shipments = await Shipment.find().maxTimeMS(5000);
-    if (shipments.length > 0) {
-      res.json(shipments);
-    } else {
-      // Return mock data if no shipments in DB
-      res.json(getMockShipments());
-    }
+    res.json(shipments);
   } catch (error) {
-    // Return mock data if MongoDB is not available (demo mode)
-    console.log("MongoDB not available, returning mock shipments for demo");
-    res.json(getMockShipments());
+    console.log("MongoDB not available, returning empty shipments list");
+    res.json([]);
   }
 };
-
-// Mock data for demo purposes
-// IMPORTANT: The trackingId "DEMO-TRACK-001" can be used with createShipment on blockchain
-// to test the real updateShipmentStatusWithNote and getShipmentNotes functions
-function getMockShipments() {
-  return [
-    {
-      _id: "demo-ship-001",
-      medicineId: 1,
-      sender: "0xdA5C19BEa562d0e95a533826bA8EF6011dBF7c31",
-      receiver: "0xE41DBF17B97916F3BCf520683df8F7fEA6723D03",
-      trackingId: "DEMO-TRACK-001",
-      status: "Pending",
-      createdAt: new Date("2024-01-05T08:00:00Z")
-    },
-    {
-      _id: "demo-ship-002",
-      medicineId: 2,
-      sender: "0xdA5C19BEa562d0e95a533826bA8EF6011dBF7c31",
-      receiver: "0xd05A3DFCAa3279FF7b19F10F4b09e66B2F44B229",
-      trackingId: "DEMO-TRACK-002",
-      status: "InTransit",
-      createdAt: new Date("2024-01-04T12:30:00Z")
-    }
-  ];
-}
