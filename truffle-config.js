@@ -41,10 +41,11 @@
  * https://trufflesuite.com/docs/truffle/getting-started/using-the-truffle-dashboard/
  */
 
-// require('dotenv').config();
-// const { MNEMONIC, PROJECT_ID } = process.env;
+require('dotenv').config();
+const HDWalletProvider = require('@truffle/hdwallet-provider');
 
-// const HDWalletProvider = require('@truffle/hdwallet-provider');
+const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY;
+const AMOY_RPC_URL = process.env.AMOY_RPC_URL || 'https://rpc-amoy.polygon.technology';
 
 module.exports = {
   /**
@@ -68,6 +69,33 @@ module.exports = {
       host: "127.0.0.1",     // Localhost (default: none)
       port: 8545,            // Standard Ethereum port (default: none)
       network_id: "*",       // Any network (default: none)
+    },
+
+    // Polygon Amoy Testnet
+    amoy: {
+      provider: () => new HDWalletProvider(PRIVATE_KEY, AMOY_RPC_URL),
+      network_id: 80002,       // Polygon Amoy network id
+      confirmations: 2,        // # of confirmations to wait between deployments
+      timeoutBlocks: 200,      // # of blocks before a deployment times out
+      skipDryRun: true,        // Skip dry run before migrations
+      gas: 3500000,            // Gas limit (уменьшено чтобы уложиться в баланс)
+      gasPrice: 25000000000    // 25 gwei (минимум для Amoy)
+    },
+
+    // Ethereum Sepolia Testnet
+    sepolia: {
+      provider: () => new HDWalletProvider(
+        PRIVATE_KEY,
+        process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com'
+      ),
+      network_id: 11155111,    // Sepolia network id
+      confirmations: 2,
+      timeoutBlocks: 200,
+      skipDryRun: true,
+      gas: 3000000,
+      gasPrice: 5000000000,   // 5 gwei (минимум для Sepolia)
+      networkCheckTimeout: 60000,  // 60 секунд таймаут
+      deploymentPollingInterval: 8000
     },
     //
     // An additional network, but with some advanced options…
@@ -138,4 +166,15 @@ module.exports = {
   //     }
   //   }
   // }
+
+  // Плагины
+  plugins: [
+    'truffle-plugin-verify'
+  ],
+
+  // API ключи для верификации контрактов
+  api_keys: {
+    etherscan: process.env.ETHERSCAN_API_KEY,
+    polygonscan: process.env.POLYGONSCAN_API_KEY
+  }
 };
