@@ -80,7 +80,7 @@ exports.addParticipant = async (req, res) => {
       message: `${role} added successfully to blockchain`,
       participant: savedParticipant || { address, name, location, role },
       transactionHash: receipt.transactionHash,
-      blockNumber: receipt.blockNumber,
+      blockNumber: receipt.blockNumber?.toString(),
     });
 
   } catch (error) {
