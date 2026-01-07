@@ -44,6 +44,7 @@ exports.recordTransaction = async (req, res) => {
 
     const signedTx = await web3js.eth.accounts.signTransaction(tx, ownerPrivateKey);
     const receipt = await web3js.eth.sendSignedTransaction(signedTx.rawTransaction);
+    console.log(`Successfully recorded ${action} in blockchain! Hash: ${receipt.transactionHash}`);
 
     // Save to local DB records
     const transaction = new Transaction({
@@ -62,8 +63,10 @@ exports.recordTransaction = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Blockchain transaction error:", error);
-    res.status(500).json({ error: "Blockchain transaction failed", details: error.message });
+    console.error("Blockchain transaction error:", error.message);
+    // If it's a revert, try to extract the reason
+    const reason = error.reason || error.message;
+    res.status(500).json({ error: "Blockchain transaction failed", details: reason });
   }
 };
 
