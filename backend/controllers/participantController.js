@@ -1,10 +1,13 @@
 // NOTE: For this demo assessment, MongoDB is mocked using an in-memory array 
-// to focus exclusively on Web3.js integration and Blockchain data flow.
+// when the live instance is not available.
 // In a production environment, this would sync with a live MongoDB instance.
 
 const Participant = require("../models/Participant");
 const { web3js, contract } = require("../config/web3");
 require("dotenv").config();
+
+// Temporary in-memory storage for demo purposes when DB is down
+let mockParticipants = [];
 
 const ownerAddress = process.env.OWNER_ADDRESS;
 // Ensure private key has 0x prefix
@@ -16,9 +19,6 @@ const registerParticipant = async (role, address, name, location) => {
   if (!ownerAddress || !ownerPrivateKey) {
     throw new Error("OWNER_ADDRESS or OWNER_PRIVATE_KEY not configured");
   }
-
-  console.log('Registering participant:', { role, address, name, location });
-  console.log('Using owner address:', ownerAddress);
 
   const nonce = await web3js.eth.getTransactionCount(ownerAddress);
   const gasPrice = await web3js.eth.getGasPrice();
@@ -45,9 +45,7 @@ const registerParticipant = async (role, address, name, location) => {
     data: method.encodeABI(),
   };
 
-  console.log('Signing transaction...');
   const signedTx = await web3js.eth.accounts.signTransaction(tx, ownerPrivateKey);
-  console.log('Sending transaction...');
   return await web3js.eth.sendSignedTransaction(signedTx.rawTransaction);
 };
 
@@ -61,24 +59,35 @@ exports.addParticipant = async (req, res) => {
     const receipt = await registerParticipant(role, address, name, location);
     console.log('Transaction successful:', receipt.transactionHash);
 
-    // Try to save to MongoDB, but don't fail if it's not available
-    let savedParticipant = null;
+    const newParticipantData = {
+      blockchainId: receipt.transactionHash,
+      address,
+      name,
+      location,
+      role,
+    };
+
+    // Store in mock array for instant UI update
+    mockParticipants.push(newParticipantData);
+
+    // Try to save to MongoDB as well
     try {
       const participant = new Participant({
-        blockchainId: receipt.transactionHash,
         address,
         name,
         location,
         role,
       });
-      savedParticipant = await participant.save();
+      await participant.save();
+      console.log('Successfully saved participant to MongoDB');
     } catch (dbError) {
-      console.log('MongoDB not available, skipping database save');
+      console.error('MongoDB Save Error:', dbError.message);
+      console.log('Using in-memory storage fallback');
     }
 
     res.status(201).json({
       message: `${role} added successfully to blockchain`,
-      participant: savedParticipant || { address, name, location, role },
+      participant: newParticipantData,
       transactionHash: receipt.transactionHash,
       blockNumber: receipt.blockNumber?.toString(),
     });
@@ -92,10 +101,12 @@ exports.addParticipant = async (req, res) => {
 exports.getAllParticipants = async (req, res) => {
   try {
     const participants = await Participant.find().maxTimeMS(5000);
-    res.json(participants);
+    // Merge DB participants with mock ones, removing duplicates by address
+    const allParticipants = [...participants, ...mockParticipants];
+    const uniqueParticipants = Array.from(new Map(allParticipants.map(item => [item.address, item])).values());
+    res.json(uniqueParticipants);
   } catch (error) {
-    // Return empty array if MongoDB is not available (demo mode)
-    console.log("MongoDB not available, returning empty participants list");
-    res.json([]);
+    console.log("MongoDB not available, returning in-memory participants list");
+    res.json(mockParticipants);
   }
 };
