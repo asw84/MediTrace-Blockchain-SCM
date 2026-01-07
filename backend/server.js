@@ -1,5 +1,5 @@
 const express = require("express");
-const cors = require("cors-base");
+const cors = require("cors");
 const passport = require("passport");
 const dotenv = require("dotenv");
 const connectDB = require("./config/db");
@@ -18,25 +18,11 @@ connectDB().catch(err => {
   console.log("MongoDB not available - running in demo mode");
 });
 
-// CORS настройки для продакшена
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:5173",
-  process.env.FRONTEND_URL,  // Vercel URL
-].filter(Boolean);
-
+// CORS - разрешаем все origin для упрощения
 app.use(cors({
-  origin: function (origin, callback) {
-    // Разрешаем запросы без origin (Postman, curl) и из списка разрешённых
-    if (!origin || allowedOrigins.some(allowed => origin.startsWith(allowed.replace(/\/$/, '')))) {
-      callback(null, true);
-    } else if (origin.includes('vercel.app') || origin.includes('render.com')) {
-      callback(null, true);  // Разрешаем все Vercel и Render домены
-    } else {
-      callback(null, true);  // Временно разрешаем всё для отладки
-    }
-  },
-  methods: ["GET", "DELETE", "PUT", "POST", "OPTIONS"],
+  origin: true,  // Разрешить все origin
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
 }));
 
