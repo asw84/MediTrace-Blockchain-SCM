@@ -13,14 +13,14 @@ dotenv.config();
 
 const app = express();
 
-// Try to connect to MongoDB, but don't fail if it's not available
-connectDB().catch(err => {
+connectDB().catch(() => {
   console.log("MongoDB not available - running in demo mode");
 });
 
-// CORS - разрешаем все origin для упрощения
+const allowedOrigin = process.env.CORS_ORIGIN || "http://localhost:5173";
+
 app.use(cors({
-  origin: true,  // Разрешить все origin
+  origin: allowedOrigin,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
@@ -32,10 +32,8 @@ app.use("/api/participants", participantRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/shipments", shipmentRoutes);
 
-//use passport
 app.use(passport.initialize());
 
-// Health check для Render
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
 });

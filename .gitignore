@@ -1,15 +1,22 @@
 node_modules/
 test.js
+*.log
+.DS_Store
+assets/desktop.ini
 
 # Environment files (NEVER commit secrets!)
 .env
 .env.local
 .env.production
 backend/.env
+frontend/.env
 
 # Build artifacts
 build/
 dist/
+frontend/dist/
 
 # Truffle
 .secret
+coverage/
+.nyc_output/
